@@ -1,11 +1,14 @@
 {
-  "name": "checkout-infinitepay-loja",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "start": "node server.js"
+  "1": {
+    "nome": "fgfggf",
+    "precoCentavos": 2000
   },
-  "engines": {
-    "node": ">=20"
+  "2": {
+    "nome": "zxdsdsds",
+    "precoCentavos": 2000
+  },
+  "3": {
+    "nome": "tete",
+    "precoCentavos": 2000
   }
 }
