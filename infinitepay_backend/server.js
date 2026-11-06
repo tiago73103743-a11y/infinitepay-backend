@@ -30,6 +30,10 @@ http.createServer(async(req,res)=>{
       return {quantity:q,price:p.precoCentavos,description:String(p.nome).slice(0,90)};
    });
    if(fretes[body.frete]>0)items.push({quantity:1,price:fretes[body.frete],description:'Frete - '+body.frete});
+   const valorCentavos=items.reduce((s,i)=>s+i.price*i.quantity,0);
+   if(!Number.isSafeInteger(body.valorEsperadoCentavos) || body.valorEsperadoCentavos!==valorCentavos) {
+       throw new Error('Preço da loja diferente do catálogo do servidor. No painel administrativo, baixe catalogo.json e atualize o arquivo no GitHub. Valor seguro do servidor: R$ '+(valorCentavos/100).toFixed(2).replace('.',','));
+   }
    const order_nsu=crypto.randomUUID();
    const payload={handle:HANDLE,order_nsu,items};
    if(SITE_ORIGIN.startsWith('https://'))payload.redirect_url=SITE_ORIGIN+'/';
@@ -43,7 +47,7 @@ http.createServer(async(req,res)=>{
    const url=dados.url || dados.checkout_url || dados.link;
    if(typeof url!=='string'||!url.startsWith('https://'))throw new Error('Resposta inesperada do provedor');
    pedidos.set(order_nsu,{items,amount:items.reduce((s,i)=>s+i.price*i.quantity,0),paid:false});
-   resposta(res,200,{url,order_nsu});
+   resposta(res,200,{url,order_nsu,valorCentavos});
   }catch(e){resposta(res,400,{error:e.message});}return;
  }
  resposta(res,404,{error:'Rota inexistente'});
