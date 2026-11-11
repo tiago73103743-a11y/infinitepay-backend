@@ -66,6 +66,17 @@ function verificarAdmin(req){
   if(dados.tipo!=='admin'||!Number.isSafeInteger(dados.exp)||dados.exp<Date.now())throw new Error('Sessão administrativa expirada.');
   return true;
 }
+async function verificarCliente(req){
+  if(!db)throw new Error('Banco de dados indisponível');
+  const token=String(req.headers.authorization||'').match(/^Bearer (.+)$/)?.[1];
+  if(!token)throw new Error('Faça login com seu e-mail para consultar suas compras.');
+  const dados=await admin.auth().verifyIdToken(token,true);
+  if(!dados.uid || !dados.email)throw new Error('Conta de cliente não identificada.');
+  return {uid:dados.uid,email:dados.email};
+}
+function carimboParaISO(valor){
+  return valor?.toDate?.().toISOString?.() || null;
+}
 function limitadorLogin(req){
   const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'').split(',')[0].slice(0,80);
   const agora=Date.now(), atual=tentativasFalhas.get(ip)||{ate:0,tentativas:0};
@@ -149,14 +160,14 @@ async function registrarPagamento(order_nsu,transaction_nsu,slug){
       registros.push({id,ref,dados,inicial,estoque,qtd});
     }
     if(registros.some(x=>!Number.isSafeInteger(x.estoque)||x.estoque<x.qtd||x.dados?.excluido)){
-      tx.update(pedidoRef,{pago:true,statusEstoque:'insuficiente',transaction_nsu,slug,confirmadoEm:admin.firestore.FieldValue.serverTimestamp()});
+      tx.update(pedidoRef,{pago:true,formaPagamento:confirmado.payment_method||confirmado.payment_type||'Não informada pela InfinitePay',statusEstoque:'insuficiente',transaction_nsu,slug,confirmadoEm:admin.firestore.FieldValue.serverTimestamp()});
       return {estoqueInsuficiente:true};
     }
     for(const x of registros){
       const base=x.dados?{}:{nome:String(x.inicial.nome),precoCentavos:Number(x.inicial.precoCentavos)};
       tx.set(x.ref,{...base,estoque:x.estoque-x.qtd,atualizadoEm:admin.firestore.FieldValue.serverTimestamp()},{merge:true});
     }
-    tx.update(pedidoRef,{pago:true,statusEstoque:'baixado',transaction_nsu,slug,confirmadoEm:admin.firestore.FieldValue.serverTimestamp()});
+    tx.update(pedidoRef,{pago:true,formaPagamento:confirmado.payment_method||confirmado.payment_type||'Não informada pela InfinitePay',statusEstoque:'baixado',transaction_nsu,slug,confirmadoEm:admin.firestore.FieldValue.serverTimestamp()});
     return {baixado:true};
   });
 }
@@ -194,6 +205,37 @@ http.createServer(async(req,res)=>{
     }
     if(req.url==='/health'&&req.method==='GET')return json(req,res,200,{ok:true,checkoutConfigurado:!!HANDLE,bancoConfigurado:!!db,pagamentoUnicoConfigurado:!!API_KEY,origemConfigurada:!!SITE_ORIGIN});
     if(req.url==='/api/produtos'&&req.method==='GET')return json(req,res,200,{produtos:await catalogo()});
+    if(req.url==='/api/devolucao'&&req.method==='GET'){
+      if(!db)return json(req,res,503,{error:'Banco indisponível'});
+      const snap=await db.collection('configuracoes').doc('devolucao').get();
+      const dias=Number(snap.data()?.dias);
+      return json(req,res,200,{dias:Number.isSafeInteger(dias)&&dias>=0&&dias<=365?dias:7});
+    }
+    if(req.url==='/api/admin/devolucao'&&req.method==='PUT'){
+      verificarAdmin(req);
+      const b=await corpo(req),dias=Number(b.dias);
+      if(!Number.isSafeInteger(dias)||dias<0||dias>365)return json(req,res,400,{error:'Prazo precisa estar entre 0 e 365 dias.'});
+      await db.collection('configuracoes').doc('devolucao').set({dias,atualizadoEm:admin.firestore.FieldValue.serverTimestamp()},{merge:true});
+      return json(req,res,200,{ok:true,dias});
+    }
+    if(req.url==='/api/cliente/pedidos'&&req.method==='GET'){
+      const cliente=await verificarCliente(req);
+      const [snap,config]=await Promise.all([
+        db.collection('pedidos').where('clienteUid','==',cliente.uid).limit(100).get(),
+        db.collection('configuracoes').doc('devolucao').get()
+      ]);
+      const configurado=Number(config.data()?.dias);
+      const diasDevolucao=Number.isSafeInteger(configurado)&&configurado>=0&&configurado<=365?configurado:7;
+      const pedidos=snap.docs.map(doc=>{
+        const p=doc.data();
+        const confirmado=carimboParaISO(p.confirmadoEm);
+        const limite=confirmado?new Date(new Date(confirmado).getTime()+diasDevolucao*86400000).toISOString():null;
+        return {id:doc.id,valorCentavos:p.valorCentavos,pago:!!p.pago,criadoEm:carimboParaISO(p.criadoEm),
+          confirmadoEm:confirmado,dataLimiteDevolucao:limite,formaPagamento:p.formaPagamento||'',
+          frete:p.frete||'',itens:Array.isArray(p.itensSnapshot)?p.itensSnapshot:[]};
+      }).sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
+      return json(req,res,200,{pedidos,diasDevolucao});
+    }
     if(req.url==='/api/admin/login'&&req.method==='POST'){
       if(!db || !ADMIN_PASSWORD || ADMIN_SESSION_SECRET.length<32)return json(req,res,503,{error:'Acesso administrativo ainda não configurado no servidor.'});
       const {ip,atual}=limitadorLogin(req);
@@ -285,6 +327,7 @@ http.createServer(async(req,res)=>{
       return json(req,res,200,{ok:true});
     }
     if(req.url==='/api/checkout'&&req.method==='POST'){
+      const cliente=await verificarCliente(req);
       if(!HANDLE)return json(req,res,503,{error:'Configure INFINITEPAY_HANDLE no Render.'});
       const body=await corpo(req);
       if(!Array.isArray(body.itens)||body.itens.length<1||body.itens.length>30||!Object.hasOwn(fretes,body.frete))return json(req,res,400,{error:'Carrinho ou frete inválido'});
@@ -313,7 +356,15 @@ http.createServer(async(req,res)=>{
       if(typeof url!=='string')throw new Error('Checkout retornou URL inválida');
       const destino=new URL(url);
       if(destino.protocol!=='https:'||!/(^|\.)infinitepay\.(io|com\.br)$/.test(destino.hostname))throw new Error('URL de checkout não pertence à InfinitePay');
-      await db.collection('pedidos').doc(order_nsu).set({valorCentavos,pago:false,itens:body.itens,frete:body.frete,criadoEm:admin.firestore.FieldValue.serverTimestamp()});
+      const itensSnapshot=body.itens.map(item=>{
+        const p=produtos[String(item.id)];
+        return {id:String(item.id),nome:String(p.nome).slice(0,90),precoCentavos:Number(p.precoCentavos),quantidade:Number(item.quantidade)};
+      });
+      await db.collection('pedidos').doc(order_nsu).set({
+        clienteUid:cliente.uid,clienteEmail:cliente.email,valorCentavos,pago:false,
+        itens:body.itens,itensSnapshot,frete:body.frete,
+        criadoEm:admin.firestore.FieldValue.serverTimestamp()
+      });
       return json(req,res,200,{url,order_nsu,valorCentavos});
     }
     return json(req,res,404,{error:'Rota inexistente'});
