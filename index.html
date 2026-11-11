@@ -648,6 +648,45 @@ body.carrinho-aberto {
           document.getElementById('btnHistoricoCliente')?.classList.toggle('d-none', !usuario);
         });
 
+        async function abrirHistoricoCliente() {
+          const user=firebase.auth().currentUser;
+          if(!user){mostrarAvisoLoja('Entre na sua conta com o e-mail para consultar o histórico.');return;}
+          document.getElementById('historicoEmailCliente').textContent=user.email||'';
+          const lista=document.getElementById('historicoListaPedidos');
+          lista.textContent='Carregando histórico...';
+          new bootstrap.Modal(document.getElementById('modalHistoricoCliente')).show();
+          try {
+            const idToken=await user.getIdToken();
+            const r=await fetch(urlCatalogo()+'/api/cliente/pedidos',{
+              headers:{Authorization:'Bearer '+idToken},cache:'no-store'
+            });
+            const d=await r.json();
+            if(!r.ok)throw new Error(d.error||'Não foi possível buscar seus pedidos.');
+            document.getElementById('historicoPolitica').textContent='Prazo informado pela loja: '+d.diasDevolucao+' dia(s), sujeito à legislação aplicável.';
+            if(!d.pedidos?.length){lista.textContent='Nenhuma compra registrada para esta conta até o momento.';return;}
+            const dataFormatada=v=>v?new Date(v).toLocaleString('pt-BR'):'Aguardando confirmação';
+            lista.innerHTML=d.pedidos.map(p=>{
+              const itens=(p.itens||[]).map(item=>{
+                const foto=produtos[item.id]?.foto||FOTO_PADRAO;
+                return `<div class="d-flex align-items-center gap-3 border-top py-2">
+                  <img src="${escaparHTML(foto)}" alt="Foto do produto" style="width:64px;height:64px;object-fit:cover;border-radius:6px">
+                  <div><strong>${escaparHTML(item.nome||'Produto')}</strong><div>Quantidade: ${Number(item.quantidade)||1} — Preço unitário: ${formatarMoeda(Number(item.precoCentavos||0)/100)}</div></div>
+                </div>`;
+              }).join('');
+              return `<article class="card mb-3"><div class="card-body">
+                <div class="fw-bold">${p.pago?'Pagamento confirmado':'Pagamento pendente'}</div>
+                <div>Pedido: ${escaparHTML(p.id)}</div>
+                <div>Compra iniciada: ${escaparHTML(dataFormatada(p.criadoEm))}</div>
+                <div>Pagamento confirmado: ${escaparHTML(dataFormatada(p.confirmadoEm))}</div>
+                <div>Forma de pagamento: ${escaparHTML(p.formaPagamento||'Não informada pela InfinitePay')}</div>
+                <div>Entrega: ${escaparHTML(p.frete)}</div>
+                <div>Valor total: <strong>${formatarMoeda(Number(p.valorCentavos)/100)}</strong></div>
+                <div>Prazo de devolução: ${p.dataLimiteDevolucao?escaparHTML(dataFormatada(p.dataLimiteDevolucao)):'A partir da confirmação do pagamento'}</div>
+                ${itens}</div></article>`;
+            }).join('');
+          } catch(e){lista.textContent='Erro ao carregar histórico: '+(e.message||String(e));}
+        }
+
         function mostrarAvisoLoja(msg) {
             let el=document.getElementById('avisoLoja');
             if(!el){el=document.createElement('div');el.id='avisoLoja';el.className='alert alert-warning position-fixed bottom-0 start-50 translate-middle-x';el.style.zIndex='3000';document.body.appendChild(el);}
@@ -702,9 +741,13 @@ body.carrinho-aberto {
             document.getElementById('configBackendInfinite').value=configLoja.infinitepay.backendUrl;
             document.getElementById('descontoPixAdmin').value=configLoja.descontoPixPercent;
         }
-        function salvarConfiguracoes() {
+        async function salvarConfiguracoes() {
             if(!modoAdmAtivo)return;
             const desconto=Number(document.getElementById('descontoPixAdmin').value);
+            const dias=Number(document.getElementById('diasDevolucaoAdmin').value);
+            if(!Number.isSafeInteger(dias)||dias<0||dias>365){mostrarResultadoAdmin('Prazo de devolução inválido.');return;}
+            try { await requisicaoAdmin('/api/admin/devolucao','PUT',{dias}); }
+            catch(e){mostrarResultadoAdmin('Não foi possível salvar o prazo de devolução: '+e.message);return;}
             if(!Number.isFinite(desconto)||desconto<0||desconto>30){mostrarResultadoAdmin('Desconto inválido.');return;}
             const backend=document.getElementById('configBackendInfinite').value.trim().replace(/\/$/,'');
             if(!/^https:\/\/[^\s]+$/.test(backend)){mostrarResultadoAdmin('Endereço HTTPS inválido.');return;}
@@ -715,9 +758,13 @@ body.carrinho-aberto {
             mostrarResultadoAdmin('Preferências visuais salvas neste navegador. Para desconto real, altere DESCONTO_PIX no Render.');
         }
         function atualizarExibicaoDados() { /* QR Code e PIX gerados pela InfinitePay */ }
-        function abrirConfigLoja() {
+        async function abrirConfigLoja() {
             if(!modoAdmAtivo)return;
             carregarConfiguracoes();
+            try {
+              const r=await fetch(urlCatalogo()+'/api/devolucao',{cache:'no-store'});
+              if(r.ok){const d=await r.json();document.getElementById('diasDevolucaoAdmin').value=d.dias;}
+            }catch(e){console.warn('Prazo de devolução:',e);}
             new bootstrap.Modal(document.getElementById('modalConfigLoja')).show();
         }
 
@@ -762,10 +809,13 @@ body.carrinho-aberto {
             const totalEsperado = subtotalCentavos + Math.round(Number(freteSelecionado?.valor||0)*100);
             botao.disabled=true;
             status.className='small text-muted';
-            status.textContent='Consultando o valor seguro da compra...';
+            status.textContent='Verificando conta e valor seguro da compra...';
             try {
+                const usuario=firebase.auth().currentUser;
+                if(!usuario) throw new Error('Entre com seu e-mail e conclua o login pelo link recebido antes de pagar.');
+                const idToken=await usuario.getIdToken();
                 const resp=await fetch(backend+'/api/checkout',{
-                    method:'POST',headers:{'Content-Type':'application/json'},
+                    method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
                     body:JSON.stringify({itens:Object.entries(quantidades).map(([id,quantidade])=>({id,quantidade})),frete,valorEsperadoCentavos:totalEsperado})
                 });
                 const dados=await resp.json();
@@ -1378,53 +1428,3 @@ function abrirModalSenhaAdm() {
                     body:JSON.stringify({order_nsu,transaction_nsu,slug})
                 });
                 const d=await r.json();
-                if(!r.ok)throw new Error(d.error||'Não foi possível confirmar o pagamento.');
-                if(d.pendente)throw new Error('O pagamento ainda não foi confirmado. Confira a transação na InfinitePay.');
-                area.className='container mt-3 alert '+(d.estoqueInsuficiente?'alert-warning':'alert-success');
-                area.textContent=d.estoqueInsuficiente?'Pagamento confirmado, mas há divergência de estoque. Entre em contato com a loja.':'Pagamento confirmado pela InfinitePay. Obrigado pela compra!';
-                await sincronizarProdutosOnline(true);
-            }catch(e){
-                area.className='container mt-3 alert alert-warning';
-                area.textContent='Não foi possível confirmar automaticamente: '+e.message+' Confira o pagamento no aplicativo InfinitePay.';
-            }finally{
-                // Evita confirmar a mesma URL em toda atualização da página.
-                const limpa=new URL(location.href);
-                ['order_nsu','transaction_nsu','slug','receipt_url','capture_method'].forEach(k=>limpa.searchParams.delete(k));
-                history.replaceState(null,'',limpa.pathname+limpa.search+limpa.hash);
-            }
-        }
-        function atualizarValoresCompra() {
-            if (produtoAtual) calcularTotal();
-        // Depois de carregar os produtos
-aplicarVisibilidadeBotaoTroca();
-}
-
-
-
-
-// ========== CONTROLE DO BOTÃO TROCAR FOTO ==========
-function alternarBotaoTrocaFoto() {
-    const ligado = document.getElementById('mostrarBotaoTrocaFoto').checked;
-    localStorage.setItem('botaoTrocaFotoAtivo', ligado ? 'sim' : 'nao');
-    aplicarVisibilidadeBotaoTroca();
-}
-
-function aplicarVisibilidadeBotaoTroca() {
-    const estado = localStorage.getItem('botaoTrocaFotoAtivo') || 'sim';
-    const ligado = estado === 'sim';
-    
-    // Marca/desmarca o interruptor
-    const interruptor = document.getElementById('mostrarBotaoTrocaFoto');
-    if (interruptor) interruptor.checked = ligado;
-    
-    // Aplica em todos os botões
-    document.querySelectorAll('.btn-trocar-foto').forEach(btn => {
-        btn.style.display = (modoAdmAtivo && ligado) ? 'block' : 'none';
-    });
-}
-// Atualização da loja
- 
-    </script>
-    
-</body>
-</html>
