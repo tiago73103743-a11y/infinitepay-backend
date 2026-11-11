@@ -280,6 +280,11 @@ body.carrinho-aberto {
 </head>
 <body>
 
+    <!-- Histórico do cliente: aparece à esquerda quando há uma conta autenticada -->
+    <button id="btnHistoricoCliente" type="button" class="btn btn-primary d-none" onclick="abrirHistoricoCliente()" style="position:fixed;left:12px;top:95px;z-index:1030;box-shadow:0 3px 10px #0002;">
+      <i class="bi bi-clock-history me-1"></i> Histórico
+    </button>
+
     <!-- 🔐 ÁREA DE LOGIN -->
     <section class="py-3">
         <div class="container">
@@ -466,6 +471,21 @@ body.carrinho-aberto {
 </div>
 
 
+    <!-- HISTÓRICO INDIVIDUAL / EXTRATO DO CLIENTE -->
+    <div class="modal fade" id="modalHistoricoCliente" tabindex="-1" aria-labelledby="tituloHistoricoCliente" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title" id="tituloHistoricoCliente"><i class="bi bi-clock-history me-2"></i>Meu histórico de compras</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-2">Conta: <strong id="historicoEmailCliente"></strong></p>
+          <p class="text-muted small" id="historicoPolitica">Consultando prazo de devolução...</p>
+          <div id="historicoListaPedidos" role="status">Carregando histórico...</div>
+        </div>
+      </div></div>
+    </div>
+
     <!-- MODAL SENHA ADM -->
     <div class="modal fade" id="modalSenhaAdm" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
@@ -511,6 +531,11 @@ body.carrinho-aberto {
                         <input type="number" id="descontoPixAdmin" class="form-control" min="0" max="30" step="1" value="5">
                     </div>
                     <hr>
+                    <div class="mb-3">
+                      <label class="form-label fw-bold" for="diasDevolucaoAdmin">Prazo de devolução (dias)</label>
+                      <input type="number" class="form-control" id="diasDevolucaoAdmin" min="0" max="365" step="1" value="7">
+                      <small class="text-muted">O prazo informado será mostrado ao cliente. A configuração não substitui direitos previstos em lei.</small>
+                    </div>
                     <hr>
                     <div class="d-grid">
                         <button class="btn btn-primary" onclick="salvarConfiguracoes()">
@@ -618,7 +643,10 @@ body.carrinho-aberto {
             }
         }
 
-        firebase.auth().onAuthStateChanged(atualizarTelaLogin);
+        firebase.auth().onAuthStateChanged(usuario => {
+          atualizarTelaLogin(usuario);
+          document.getElementById('btnHistoricoCliente')?.classList.toggle('d-none', !usuario);
+        });
 
         function mostrarAvisoLoja(msg) {
             let el=document.getElementById('avisoLoja');
