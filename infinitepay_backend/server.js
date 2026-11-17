@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const crypto=require('node:crypto');
 const {URL}=require('node:url');
 const admin=require('firebase-admin');
+const VERSAO_CORRECAO='firebase-dois-projetos-2026-11-17-v2';
 const PORT=Number(process.env.PORT||3000);
 const HANDLE=String(process.env.INFINITEPAY_HANDLE||'').replace(/^\$/,'').trim();
 const API_KEY=String(process.env.INFINITEPAY_API_KEY||'').trim();
@@ -12,14 +13,28 @@ const ADMIN_PASSWORD=String(process.env.ADMIN_PASSWORD||'');
 const ADMIN_SESSION_SECRET=String(process.env.ADMIN_SESSION_SECRET||'');
 const DESCONTO_PIX=Number(process.env.DESCONTO_PIX||0);
 const PUBLIC_BACKEND_URL=String(process.env.PUBLIC_BACKEND_URL||'https://infinitepay-backend.onrender.com').replace(/\/$/,'');
+// O login dos clientes utiliza outro projeto Firebase; o Firestore continua no projeto da loja.
+const CLIENT_FIREBASE_PROJECT_ID=String(process.env.CLIENT_FIREBASE_PROJECT_ID||'e-mail-2fc5e').trim();
+let clienteAuth=null;
 const CATALOGO_INICIAL=JSON.parse(fs.readFileSync(new URL('./catalogo.json','file://'+__filename),'utf8'));
 const fretes={'Retirada no Local':0,'Correios':890,'Entrega':1490};
 let db=null;
 try {
   if(process.env.FIREBASE_SERVICE_ACCOUNT_JSON){
     const conta=JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    admin.initializeApp({credential:admin.credential.cert(conta)});
-    db=admin.firestore();
+    const appLoja = admin.initializeApp({credential:admin.credential.cert(conta), projectId:conta.project_id});
+    db=admin.firestore(appLoja);
+    console.log('[CONFIG]', VERSAO_CORRECAO, 'Firestore:', appLoja.options.projectId);
+    // O Firestore usa pequenos-estilos; os tokens dos clientes usam e-mail-2fc5e.
+    // Sem credencial do projeto de produtos nesta instância: usa o ID dos clientes para validar o token.
+    const appCliente = admin.initializeApp({
+      projectId: CLIENT_FIREBASE_PROJECT_ID
+    }, 'autenticacao-clientes');
+    clienteAuth = admin.auth(appCliente);
+    console.log('[CONFIG]', VERSAO_CORRECAO, 'Autenticacao clientes:', appCliente.options.projectId);
+    if(appLoja.options.projectId===appCliente.options.projectId) {
+      throw new Error('Projetos de autenticacao e Firestore nao podem ser iguais nesta configuracao.');
+    }
   } else console.warn('Firestore não configurado; edição online desabilitada.');
  } catch(e){
   console.error('Firebase Admin inválido:',e.message);
@@ -67,15 +82,27 @@ function verificarAdmin(req){
   return true;
 }
 async function verificarCliente(req){
-  if(!db)throw new Error('Banco de dados indisponível');
+  if(!db||!clienteAuth)throw new Error('Autenticação ou Firestore indisponível.');
   const token=String(req.headers.authorization||'').match(/^Bearer (.+)$/)?.[1];
-  if(!token)throw new Error('Faça login com seu e-mail para consultar suas compras.');
-  const dados=await admin.auth().verifyIdToken(token,true);
-  if(!dados.uid || !dados.email)throw new Error('Conta de cliente não identificada.');
-  return {uid:dados.uid,email:dados.email};
+  if(!token)throw new Error('Faça login com seu e-mail antes de comprar ou consultar o histórico.');
+  // Validação de assinatura, emissor, público e validade no projeto dos clientes.
+  // Sem checkRevoked: a conta de serviço do banco não tem necessariamente permissões
+  // para consultar revogação de sessões no outro projeto Firebase.
+  // O projeto esperado precisa ser o dos clientes, nao o do Firestore.
+  const appAuth=clienteAuth.app;
+  if(appAuth.options.projectId!==CLIENT_FIREBASE_PROJECT_ID) {
+    throw new Error('Configuracao de autenticacao inconsistente: projeto de clientes incorreto.');
+  }
+  const usuario=await clienteAuth.verifyIdToken(token);
+  if(!usuario.uid || !usuario.email || usuario.email_verified!==true)throw new Error('Confirme o acesso por e-mail para continuar.');
+  return {uid:usuario.uid,email:usuario.email};
 }
-function carimboParaISO(valor){
-  return valor?.toDate?.().toISOString?.() || null;
+function dataISO(v){return v?.toDate?.()?.toISOString?.()||null;}
+async function obterPrazoGeral(){
+  const doc=await db.collection('configuracoes').doc('devolucao').get();
+  const bruto=doc.data()?.dias;
+  const dias=Number(bruto);
+  return bruto!==undefined&&bruto!==null&&Number.isSafeInteger(dias)&&dias>=0&&dias<=365?dias:7;
 }
 function limitadorLogin(req){
   const ip=String(req.headers['x-forwarded-for']||req.socket.remoteAddress||'').split(',')[0].slice(0,80);
@@ -86,7 +113,7 @@ function limitadorLogin(req){
 async function catalogo(){
   const produtos={};
   for(const [id,p] of Object.entries(CATALOGO_INICIAL)){
-    if(/^\d+$/.test(id))produtos[id]={nome:String(p.nome),precoCentavos:Number(p.precoCentavos),estoque:50,foto:'',alturaFoto:180,ajusteFoto:'cover',pixQr:''};
+    if(/^\d+$/.test(id))produtos[id]={nome:String(p.nome),precoCentavos:Number(p.precoCentavos),estoque:50,foto:'',alturaFoto:180,ajusteFoto:'cover',pixQr:'',prazoDevolucaoDias:null};
   }
   if(db){
     const snap=await db.collection('produtos').get();
@@ -96,7 +123,7 @@ async function catalogo(){
       if(p.excluido){delete produtos[doc.id];return;}
       // A edição de preço/nome/estoque atualiza só o campo alterado.
       // Portanto, herdamos os demais campos do catálogo inicial.
-      const anterior=produtos[doc.id]||{nome:'',precoCentavos:0,estoque:50,foto:'',alturaFoto:180,ajusteFoto:'cover',pixQr:''};
+      const anterior=produtos[doc.id]||{nome:'',precoCentavos:0,estoque:50,foto:'',alturaFoto:180,ajusteFoto:'cover',pixQr:'',prazoDevolucaoDias:null};
       produtos[doc.id]={...anterior,...p,
         foto:p.foto||anterior.foto||'',pixQr:p.pixQr||anterior.pixQr||'',
         alturaFoto:p.alturaFoto||anterior.alturaFoto||180,
@@ -203,38 +230,30 @@ http.createServer(async(req,res)=>{
       const resultado=await registrarPagamento(order_nsu,transaction_nsu,slug);
       return json(req,res,200,{ok:true,...resultado});
     }
-    if(req.url==='/health'&&req.method==='GET')return json(req,res,200,{ok:true,checkoutConfigurado:!!HANDLE,bancoConfigurado:!!db,pagamentoUnicoConfigurado:!!API_KEY,origemConfigurada:!!SITE_ORIGIN});
+    if(req.url==='/health'&&req.method==='GET')return json(req,res,200,{ok:true,versao:VERSAO_CORRECAO,projetoFirestore:admin.apps.find(a=>a.name==='[DEFAULT]')?.options.projectId||null,projetoAutenticacao:clienteAuth?.app?.options.projectId||null,checkoutConfigurado:!!HANDLE,bancoConfigurado:!!db,pagamentoUnicoConfigurado:!!API_KEY,origemConfigurada:!!SITE_ORIGIN});
     if(req.url==='/api/produtos'&&req.method==='GET')return json(req,res,200,{produtos:await catalogo()});
     if(req.url==='/api/devolucao'&&req.method==='GET'){
       if(!db)return json(req,res,503,{error:'Banco indisponível'});
-      const snap=await db.collection('configuracoes').doc('devolucao').get();
-      const dias=Number(snap.data()?.dias);
-      return json(req,res,200,{dias:Number.isSafeInteger(dias)&&dias>=0&&dias<=365?dias:7});
+      return json(req,res,200,{dias:await obterPrazoGeral()});
     }
     if(req.url==='/api/admin/devolucao'&&req.method==='PUT'){
       verificarAdmin(req);
-      const b=await corpo(req),dias=Number(b.dias);
-      if(!Number.isSafeInteger(dias)||dias<0||dias>365)return json(req,res,400,{error:'Prazo precisa estar entre 0 e 365 dias.'});
+      const body=await corpo(req),dias=Number(body.dias);
+      if(!Number.isSafeInteger(dias)||dias<0||dias>365)return json(req,res,400,{error:'Informe de 0 a 365 dias.'});
       await db.collection('configuracoes').doc('devolucao').set({dias,atualizadoEm:admin.firestore.FieldValue.serverTimestamp()},{merge:true});
       return json(req,res,200,{ok:true,dias});
     }
     if(req.url==='/api/cliente/pedidos'&&req.method==='GET'){
       const cliente=await verificarCliente(req);
-      const [snap,config]=await Promise.all([
-        db.collection('pedidos').where('clienteUid','==',cliente.uid).limit(100).get(),
-        db.collection('configuracoes').doc('devolucao').get()
-      ]);
-      const configurado=Number(config.data()?.dias);
-      const diasDevolucao=Number.isSafeInteger(configurado)&&configurado>=0&&configurado<=365?configurado:7;
+      const snap=await db.collection('pedidos').where('clienteUid','==',cliente.uid).limit(100).get();
       const pedidos=snap.docs.map(doc=>{
         const p=doc.data();
-        const confirmado=carimboParaISO(p.confirmadoEm);
-        const limite=confirmado?new Date(new Date(confirmado).getTime()+diasDevolucao*86400000).toISOString():null;
-        return {id:doc.id,valorCentavos:p.valorCentavos,pago:!!p.pago,criadoEm:carimboParaISO(p.criadoEm),
-          confirmadoEm:confirmado,dataLimiteDevolucao:limite,formaPagamento:p.formaPagamento||'',
-          frete:p.frete||'',itens:Array.isArray(p.itensSnapshot)?p.itensSnapshot:[]};
+        return {id:doc.id,valorCentavos:p.valorCentavos,pago:!!p.pago,
+          criadoEm:dataISO(p.criadoEm),confirmadoEm:dataISO(p.confirmadoEm),
+          formaPagamento:p.formaPagamento||'',frete:p.frete||'',
+          itens:Array.isArray(p.itensSnapshot)?p.itensSnapshot:[]};
       }).sort((a,b)=>String(b.criadoEm||'').localeCompare(String(a.criadoEm||'')));
-      return json(req,res,200,{pedidos,diasDevolucao});
+      return json(req,res,200,{pedidos});
     }
     if(req.url==='/api/admin/login'&&req.method==='POST'){
       if(!db || !ADMIN_PASSWORD || ADMIN_SESSION_SECRET.length<32)return json(req,res,503,{error:'Acesso administrativo ainda não configurado no servidor.'});
@@ -277,6 +296,12 @@ http.createServer(async(req,res)=>{
         const estoque=Number(body.estoque);
         if(!Number.isSafeInteger(estoque)||estoque<0||estoque>100000)return json(req,res,400,{error:'Estoque inválido'});
         alteracoes.estoque=estoque;
+      }
+      if(Object.hasOwn(body,'prazoDevolucaoDias')){
+        const prazo=body.prazoDevolucaoDias;
+        if(prazo===null){alteracoes.prazoDevolucaoDias=null;}
+        else if(Number.isSafeInteger(prazo)&&prazo>=0&&prazo<=365){alteracoes.prazoDevolucaoDias=prazo;}
+        else return json(req,res,400,{error:'Prazo individual deve ser de 0 a 365 dias, ou padrão geral.'});
       }
       if(!Object.keys(alteracoes).length)return json(req,res,400,{error:'Nenhuma alteração enviada'});
       const existente=await ref.get();
@@ -356,13 +381,16 @@ http.createServer(async(req,res)=>{
       if(typeof url!=='string')throw new Error('Checkout retornou URL inválida');
       const destino=new URL(url);
       if(destino.protocol!=='https:'||!/(^|\.)infinitepay\.(io|com\.br)$/.test(destino.hostname))throw new Error('URL de checkout não pertence à InfinitePay');
+      const prazoGeral=await obterPrazoGeral();
       const itensSnapshot=body.itens.map(item=>{
         const p=produtos[String(item.id)];
-        return {id:String(item.id),nome:String(p.nome).slice(0,90),precoCentavos:Number(p.precoCentavos),quantidade:Number(item.quantidade)};
+        const prazo=Number.isSafeInteger(p.prazoDevolucaoDias)?p.prazoDevolucaoDias:prazoGeral;
+        return {id:String(item.id),nome:String(p.nome).slice(0,90),precoCentavos:p.precoCentavos,
+          quantidade:Number(item.quantidade),prazoDevolucaoDias:prazo};
       });
       await db.collection('pedidos').doc(order_nsu).set({
-        clienteUid:cliente.uid,clienteEmail:cliente.email,valorCentavos,pago:false,
-        itens:body.itens,itensSnapshot,frete:body.frete,
+        clienteUid:cliente.uid,clienteEmail:cliente.email,
+        valorCentavos,pago:false,itens:body.itens,itensSnapshot,frete:body.frete,
         criadoEm:admin.firestore.FieldValue.serverTimestamp()
       });
       return json(req,res,200,{url,order_nsu,valorCentavos});
