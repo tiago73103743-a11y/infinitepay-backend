@@ -111,6 +111,27 @@ body.carrinho-aberto {
             background-repeat: no-repeat;
             min-height: 100vh;
         }
+        .whatsapp-float {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 1000;
+            background-color: #25d366;
+            color: white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: transform 0.2s ease;
+        }
+        .whatsapp-float:hover {
+            transform: scale(1.1);
+            color: white;
+        }
         .btn-success {
             background-color: #25d366;
             border-color: #25d366;
@@ -280,10 +301,11 @@ body.carrinho-aberto {
 </head>
 <body>
 
-    <!-- Histórico do cliente: aparece à esquerda quando há uma conta autenticada -->
-    <button id="btnHistoricoCliente" type="button" class="btn btn-primary d-none" onclick="abrirHistoricoCliente()" style="position:fixed;left:12px;top:95px;z-index:1030;box-shadow:0 3px 10px #0002;">
-      <i class="bi bi-clock-history me-1"></i> Histórico
-    </button>
+    <!-- Histórico e extrato exclusivos da conta Firebase autenticada -->
+    <div id="acoesCliente" class="d-none" style="position:fixed;top:88px;left:10px;z-index:1030;display:flex;gap:5px;flex-wrap:wrap;max-width:75vw;">
+      <button type="button" class="btn btn-primary btn-sm shadow" onclick="abrirHistoricoCliente()"><i class="bi bi-clock-history"></i> Histórico</button>
+      <button type="button" class="btn btn-outline-primary btn-sm bg-white shadow" onclick="abrirExtratoCliente()"><i class="bi bi-receipt"></i> Extrato</button>
+    </div>
 
     <!-- 🔐 ÁREA DE LOGIN -->
     <section class="py-3">
@@ -297,6 +319,11 @@ body.carrinho-aberto {
                         <label class="form-label">Seu e-mail</label>
                         <input type="email" id="emailLogin" class="form-control" placeholder="seu@email.com">
                     </div>
+                    <button type="button" class="btn btn-outline-dark w-100 mb-3" onclick="entrarComGoogle()">
+                        <span style="font-weight:bold;color:#4285F4;margin-right:8px">G</span> Continuar com o Google
+                    </button>
+                    <p class="text-muted small text-center">Já comprou usando link por e-mail? Entre primeiro pelo link e vincule o Google para preservar seu histórico.</p>
+                    <div class="text-center text-muted small my-2">ou continue com e-mail</div>
                     <button class="btn btn-success w-100" onclick="enviarLinkLogin()">
                         <i class="bi bi-send me-1"></i> Entrar / Cadastrar
                     </button>
@@ -309,6 +336,9 @@ body.carrinho-aberto {
                 <div class="usuario-logado text-center">
                     <h6 class="mb-2">Bem-vindo(a)! ✅</h6>
                     <p id="emailUsuario" class="text-muted mb-3"></p>
+                    <button type="button" class="btn btn-outline-dark w-100 mb-3" id="btnVincularGoogle" onclick="vincularGoogleContaAtual()">
+                        Vincular Google a esta conta
+                    </button>
                     <button class="btn btn-outline-danger" onclick="sairLogin()">
                         <i class="bi bi-box-arrow-right me-1"></i> Sair
                     </button>
@@ -320,6 +350,12 @@ body.carrinho-aberto {
    <div class="admin-secreto" onclick="abrirModalSenhaAdm()" title="Área Administrativa">
     <i class="bi bi-gear"></i>
 </div>
+
+
+
+    <a href="https://wa.me/5531973124354" target="_blank" class="whatsapp-float" title="Fale pelo WhatsApp">
+        <i class="bi bi-whatsapp"></i>
+    </a>
     
     <div id="avisoPagamento" class="container mt-3 d-none" role="status" aria-live="polite"></div>
     <header id="cabecalhoPrincipal" class="cabecalho-fundo py-5">
@@ -433,6 +469,22 @@ body.carrinho-aberto {
                     <div class="col-md-4"><label class="frete-option d-block" data-valor="8.90" data-nome="Correios" onclick="selecionarFrete(this)"><input type="radio" name="frete"> Correios — R$ 8,90</label></div>
                     <div class="col-md-4"><label class="frete-option d-block" data-valor="14.90" data-nome="Entrega" onclick="selecionarFrete(this)"><input type="radio" name="frete"> Entrega — R$ 14,90</label></div>
                 </div>
+            <!-- Dados da cestinha: armazenados no pedido antes de ir para a InfinitePay -->
+            <div class="card mb-3"><div class="card-body">
+              <h6 class="fw-bold mb-3">Dados do pedido</h6>
+              <label for="clienteNomePedido" class="form-label">Nome completo do destinatário</label>
+              <input class="form-control mb-3" id="clienteNomePedido" maxlength="100" autocomplete="name" required>
+              <div id="enderecoPedido" class="row g-2">
+                <div class="col-sm-4"><label class="form-label" for="pedidoCep">CEP</label><input class="form-control" id="pedidoCep" inputmode="numeric" maxlength="9" autocomplete="postal-code"></div>
+                <div class="col-sm-8"><label class="form-label" for="pedidoRua">Rua / Avenida</label><input class="form-control" id="pedidoRua" maxlength="120" autocomplete="address-line1"></div>
+                <div class="col-sm-4"><label class="form-label" for="pedidoNumero">Número</label><input class="form-control" id="pedidoNumero" maxlength="15"></div>
+                <div class="col-sm-8"><label class="form-label" for="pedidoComplemento">Complemento</label><input class="form-control" id="pedidoComplemento" maxlength="80" autocomplete="address-line2"></div>
+                <div class="col-sm-5"><label class="form-label" for="pedidoBairro">Bairro</label><input class="form-control" id="pedidoBairro" maxlength="80"></div>
+                <div class="col-sm-5"><label class="form-label" for="pedidoCidade">Cidade</label><input class="form-control" id="pedidoCidade" maxlength="80" autocomplete="address-level2"></div>
+                <div class="col-sm-2"><label class="form-label" for="pedidoEstado">UF</label><input class="form-control text-uppercase" id="pedidoEstado" maxlength="2" autocomplete="address-level1"></div>
+              </div>
+              <small class="text-muted d-block mt-2">Para retirada no local, o endereço não será exigido. Para entrega, preencha antes de pagar.</small>
+            </div></div>
             <!-- ÁREA DE PAGAMENTO -->
             <!-- COLOQUE ISSO DEPOIS DA ÁREA DO PIX no modalCompra -->
 <hr>
@@ -471,17 +523,18 @@ body.carrinho-aberto {
 </div>
 
 
-    <!-- HISTÓRICO INDIVIDUAL / EXTRATO DO CLIENTE -->
-    <div class="modal fade" id="modalHistoricoCliente" tabindex="-1" aria-labelledby="tituloHistoricoCliente" aria-hidden="true">
+    <!-- Histórico e extrato: registros consultados no servidor somente com token Firebase -->
+    <div class="modal fade" id="modalHistoricoCliente" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header bg-primary text-white"><h5 class="modal-title">Meu histórico de compras</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><p>Conta: <strong id="emailHistorico"></strong></p><div id="listaHistorico">Carregando...</div></div>
+      </div></div>
+    </div>
+    <div class="modal fade" id="modalExtratoCliente" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
-        <div class="modal-header bg-primary text-white">
-          <h5 class="modal-title" id="tituloHistoricoCliente"><i class="bi bi-clock-history me-2"></i>Meu histórico de compras</h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
-        </div>
-        <div class="modal-body">
-          <p class="mb-2">Conta: <strong id="historicoEmailCliente"></strong></p>
-          <p class="text-muted small" id="historicoPolitica">Consultando prazo de devolução...</p>
-          <div id="historicoListaPedidos" role="status">Carregando histórico...</div>
+        <div class="modal-header bg-primary text-white"><h5 class="modal-title">Extrato de compras</h5><button class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body"><p>Conta: <strong id="emailExtrato"></strong></p><div id="resumoExtrato"></div><div id="listaExtrato"></div>
+          <button class="btn btn-outline-primary mt-3" onclick="baixarExtratoCSV()"><i class="bi bi-download"></i> Baixar extrato CSV</button>
         </div>
       </div></div>
     </div>
@@ -531,12 +584,12 @@ body.carrinho-aberto {
                         <input type="number" id="descontoPixAdmin" class="form-control" min="0" max="30" step="1" value="5">
                     </div>
                     <hr>
-                    <div class="mb-3">
-                      <label class="form-label fw-bold" for="diasDevolucaoAdmin">Prazo de devolução (dias)</label>
-                      <input type="number" class="form-control" id="diasDevolucaoAdmin" min="0" max="365" step="1" value="7">
-                      <small class="text-muted">O prazo informado será mostrado ao cliente. A configuração não substitui direitos previstos em lei.</small>
-                    </div>
                     <hr>
+                    <div class="mb-3">
+                      <label class="form-label fw-bold" for="prazoGeralDevolucao">Prazo geral de devolução (dias)</label>
+                      <input id="prazoGeralDevolucao" class="form-control" type="number" min="0" max="365" step="1" value="7">
+                      <small class="text-muted">O prazo individual pode ser alterado em cada produto. Respeite os direitos previstos em lei.</small>
+                    </div>
                     <div class="d-grid">
                         <button class="btn btn-primary" onclick="salvarConfiguracoes()">
                             <i class="bi bi-check-lg me-1"></i> Salvar Configurações
@@ -577,6 +630,7 @@ body.carrinho-aberto {
         let produtoAtual = null;
         let freteSelecionado = { valor: 0, nome: "Retirada no Local" };
         let totalCompra = 0;
+        let prazoGeralLoja = 7;
         let carrinho = [];
         let totalCarrinho = 0;
        let configLoja = {
@@ -626,6 +680,55 @@ body.carrinho-aberto {
             }
         }
 
+        // Login Google: autenticação no mesmo projeto Firebase dos clientes.
+        async function entrarComGoogle() {
+            try {
+                const atual = firebase.auth().currentUser;
+                if (atual) {
+                    mostrarAvisoLoja('Você já entrou. Para associar o Google e preservar suas compras, clique em "Vincular Google a esta conta".');
+                    return;
+                }
+                const provedor = new firebase.auth.GoogleAuthProvider();
+                const resultado = await firebase.auth().signInWithPopup(provedor);
+                atualizarTelaLogin(resultado.user);
+                mostrarAvisoLoja('Login com Google realizado!');
+            } catch (erro) {
+                console.error('Login Google:', erro);
+                if (erro.code === 'auth/account-exists-with-different-credential') {
+                    mostrarAvisoLoja('Esta conta já usa outro método. Entre primeiro pelo link de e-mail e use "Vincular Google a esta conta".');
+                } else if (erro.code === 'auth/popup-blocked') {
+                    mostrarAvisoLoja('O navegador bloqueou a janela do Google. Permita pop-ups para esta loja.');
+                } else if (erro.code !== 'auth/popup-closed-by-user') {
+                    mostrarAvisoLoja('Não foi possível entrar com Google: ' + (erro.message || erro.code));
+                }
+            }
+        }
+
+        async function vincularGoogleContaAtual() {
+            const atual = firebase.auth().currentUser;
+            if (!atual) return mostrarAvisoLoja('Entre primeiro pelo link de e-mail para preservar seu histórico.');
+            try {
+                if (atual.providerData.some(p => p.providerId === 'google.com')) {
+                    mostrarAvisoLoja('O Google já está vinculado a esta conta.');
+                    return;
+                }
+                const provedor = new firebase.auth.GoogleAuthProvider();
+                const resultado = await atual.linkWithPopup(provedor);
+                await resultado.user.reload();
+                atualizarTelaLogin(firebase.auth().currentUser);
+                mostrarAvisoLoja('Google vinculado! Suas compras continuam na mesma conta.');
+            } catch (erro) {
+                console.error('Vincular Google:', erro);
+                if (erro.code === 'auth/credential-already-in-use') {
+                    mostrarAvisoLoja('Esta conta Google está associada a outro usuário. Não alteramos suas compras; será necessário verificar o vínculo antes de continuar.');
+                } else if (erro.code === 'auth/provider-already-linked') {
+                    mostrarAvisoLoja('Google já vinculado a esta conta.');
+                } else if (erro.code !== 'auth/popup-closed-by-user') {
+                    mostrarAvisoLoja('Não foi possível vincular: ' + (erro.message || erro.code));
+                }
+            }
+        }
+
         function sairLogin() {
             firebase.auth().signOut().then(() => {
                 document.body.classList.remove('logado');
@@ -638,54 +741,16 @@ body.carrinho-aberto {
             if (usuario) {
                 document.body.classList.add('logado');
                 document.getElementById('emailUsuario').textContent = usuario.email;
+                const btnVinculo = document.getElementById('btnVincularGoogle');
+                if (btnVinculo) btnVinculo.classList.toggle('d-none', usuario.providerData.some(p => p.providerId === 'google.com'));
+                document.getElementById('acoesCliente').classList.remove('d-none');
             } else {
                 document.body.classList.remove('logado');
+                document.getElementById('acoesCliente').classList.add('d-none');
             }
         }
 
-        firebase.auth().onAuthStateChanged(usuario => {
-          atualizarTelaLogin(usuario);
-          document.getElementById('btnHistoricoCliente')?.classList.toggle('d-none', !usuario);
-        });
-
-        async function abrirHistoricoCliente() {
-          const user=firebase.auth().currentUser;
-          if(!user){mostrarAvisoLoja('Entre na sua conta com o e-mail para consultar o histórico.');return;}
-          document.getElementById('historicoEmailCliente').textContent=user.email||'';
-          const lista=document.getElementById('historicoListaPedidos');
-          lista.textContent='Carregando histórico...';
-          new bootstrap.Modal(document.getElementById('modalHistoricoCliente')).show();
-          try {
-            const idToken=await user.getIdToken();
-            const r=await fetch(urlCatalogo()+'/api/cliente/pedidos',{
-              headers:{Authorization:'Bearer '+idToken},cache:'no-store'
-            });
-            const d=await r.json();
-            if(!r.ok)throw new Error(d.error||'Não foi possível buscar seus pedidos.');
-            document.getElementById('historicoPolitica').textContent='Prazo informado pela loja: '+d.diasDevolucao+' dia(s), sujeito à legislação aplicável.';
-            if(!d.pedidos?.length){lista.textContent='Nenhuma compra registrada para esta conta até o momento.';return;}
-            const dataFormatada=v=>v?new Date(v).toLocaleString('pt-BR'):'Aguardando confirmação';
-            lista.innerHTML=d.pedidos.map(p=>{
-              const itens=(p.itens||[]).map(item=>{
-                const foto=produtos[item.id]?.foto||FOTO_PADRAO;
-                return `<div class="d-flex align-items-center gap-3 border-top py-2">
-                  <img src="${escaparHTML(foto)}" alt="Foto do produto" style="width:64px;height:64px;object-fit:cover;border-radius:6px">
-                  <div><strong>${escaparHTML(item.nome||'Produto')}</strong><div>Quantidade: ${Number(item.quantidade)||1} — Preço unitário: ${formatarMoeda(Number(item.precoCentavos||0)/100)}</div></div>
-                </div>`;
-              }).join('');
-              return `<article class="card mb-3"><div class="card-body">
-                <div class="fw-bold">${p.pago?'Pagamento confirmado':'Pagamento pendente'}</div>
-                <div>Pedido: ${escaparHTML(p.id)}</div>
-                <div>Compra iniciada: ${escaparHTML(dataFormatada(p.criadoEm))}</div>
-                <div>Pagamento confirmado: ${escaparHTML(dataFormatada(p.confirmadoEm))}</div>
-                <div>Forma de pagamento: ${escaparHTML(p.formaPagamento||'Não informada pela InfinitePay')}</div>
-                <div>Entrega: ${escaparHTML(p.frete)}</div>
-                <div>Valor total: <strong>${formatarMoeda(Number(p.valorCentavos)/100)}</strong></div>
-                <div>Prazo de devolução: ${p.dataLimiteDevolucao?escaparHTML(dataFormatada(p.dataLimiteDevolucao)):'A partir da confirmação do pagamento'}</div>
-                ${itens}</div></article>`;
-            }).join('');
-          } catch(e){lista.textContent='Erro ao carregar histórico: '+(e.message||String(e));}
-        }
+        firebase.auth().onAuthStateChanged(atualizarTelaLogin);
 
         function mostrarAvisoLoja(msg) {
             let el=document.getElementById('avisoLoja');
@@ -744,27 +809,29 @@ body.carrinho-aberto {
         async function salvarConfiguracoes() {
             if(!modoAdmAtivo)return;
             const desconto=Number(document.getElementById('descontoPixAdmin').value);
-            const dias=Number(document.getElementById('diasDevolucaoAdmin').value);
-            if(!Number.isSafeInteger(dias)||dias<0||dias>365){mostrarResultadoAdmin('Prazo de devolução inválido.');return;}
-            try { await requisicaoAdmin('/api/admin/devolucao','PUT',{dias}); }
-            catch(e){mostrarResultadoAdmin('Não foi possível salvar o prazo de devolução: '+e.message);return;}
             if(!Number.isFinite(desconto)||desconto<0||desconto>30){mostrarResultadoAdmin('Desconto inválido.');return;}
             const backend=document.getElementById('configBackendInfinite').value.trim().replace(/\/$/,'');
             if(!/^https:\/\/[^\s]+$/.test(backend)){mostrarResultadoAdmin('Endereço HTTPS inválido.');return;}
             configLoja.infinitepay.backendUrl=backend;
             configLoja.descontoPixPercent=desconto;
+            const prazo=Number(document.getElementById('prazoGeralDevolucao').value);
+            if(!Number.isSafeInteger(prazo)||prazo<0||prazo>365){mostrarResultadoAdmin('Prazo de devolução inválido.');return;}
+            try {
+              await requisicaoAdmin('/api/admin/devolucao','PUT',{dias:prazo});
+              prazoGeralLoja=prazo;
+              await sincronizarProdutosOnline(true);
+            } catch(e) {mostrarResultadoAdmin('Não foi possível salvar devolução: '+e.message);return;}
             localStorage.setItem('configLoja',JSON.stringify({infinitepay:configLoja.infinitepay,descontoPixPercent:desconto}));
             bootstrap.Modal.getInstance(document.getElementById('modalConfigLoja'))?.hide();
             mostrarResultadoAdmin('Preferências visuais salvas neste navegador. Para desconto real, altere DESCONTO_PIX no Render.');
         }
         function atualizarExibicaoDados() { /* QR Code e PIX gerados pela InfinitePay */ }
-        async function abrirConfigLoja() {
+        function abrirConfigLoja() {
             if(!modoAdmAtivo)return;
             carregarConfiguracoes();
-            try {
-              const r=await fetch(urlCatalogo()+'/api/devolucao',{cache:'no-store'});
-              if(r.ok){const d=await r.json();document.getElementById('diasDevolucaoAdmin').value=d.dias;}
-            }catch(e){console.warn('Prazo de devolução:',e);}
+            fetch(urlCatalogo()+'/api/devolucao').then(r=>r.json()).then(d=>{
+               if(Number.isSafeInteger(d.dias))document.getElementById('prazoGeralDevolucao').value=d.dias;
+            }).catch(()=>{});
             new bootstrap.Modal(document.getElementById('modalConfigLoja')).show();
         }
 
@@ -785,6 +852,11 @@ body.carrinho-aberto {
         }
 
         // O checkout sempre usa um servidor, que valida os preços do catálogo.
+        firebase.auth().onAuthStateChanged(u=>{
+            const campo=document.getElementById('clienteNomePedido');
+            if(u&&campo&&!campo.value&&u.displayName)campo.value=u.displayName;
+        });
+
         async function pagarInfinitePay() {
             if(!produtosOnlineCarregados){mostrarAvisoLoja('Catálogo online indisponível.');return;}
             const status = document.getElementById('statusInfinitePay');
@@ -809,14 +881,22 @@ body.carrinho-aberto {
             const totalEsperado = subtotalCentavos + Math.round(Number(freteSelecionado?.valor||0)*100);
             botao.disabled=true;
             status.className='small text-muted';
-            status.textContent='Verificando conta e valor seguro da compra...';
+            status.textContent='Consultando o valor seguro da compra...';
             try {
                 const usuario=firebase.auth().currentUser;
-                if(!usuario) throw new Error('Entre com seu e-mail e conclua o login pelo link recebido antes de pagar.');
-                const idToken=await usuario.getIdToken();
+                if(!usuario || !usuario.emailVerified)throw new Error('Faça login e confirme seu e-mail antes de pagar.');
+                const token=await usuario.getIdToken();
+                const clienteNome=document.getElementById('clienteNomePedido').value.trim();
+                if(clienteNome.length<2)throw new Error('Informe seu nome completo antes de pagar.');
+                const endereco={cep:document.getElementById('pedidoCep').value,street:document.getElementById('pedidoRua').value,
+                    number:document.getElementById('pedidoNumero').value,complement:document.getElementById('pedidoComplemento').value,
+                    neighborhood:document.getElementById('pedidoBairro').value,city:document.getElementById('pedidoCidade').value,
+                    state:document.getElementById('pedidoEstado').value};
+                if(frete!=='Retirada no Local'&&(!/^\d{8}$/.test(endereco.cep.replace(/\D/g,''))||!endereco.street.trim()||!endereco.number.trim()||!endereco.neighborhood.trim()||!endereco.city.trim()||! /^[a-zA-Z]{2}$/.test(endereco.state.trim())))
+                    throw new Error('Para entrega, informe CEP, rua, numero, bairro, cidade e UF.');
                 const resp=await fetch(backend+'/api/checkout',{
-                    method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+idToken},
-                    body:JSON.stringify({itens:Object.entries(quantidades).map(([id,quantidade])=>({id,quantidade})),frete,valorEsperadoCentavos:totalEsperado})
+                    method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},
+                    body:JSON.stringify({itens:Object.entries(quantidades).map(([id,quantidade])=>({id,quantidade})),frete,valorEsperadoCentavos:totalEsperado,clienteNome,endereco})
                 });
                 const dados=await resp.json();
                 if(!resp.ok) throw new Error(dados.error||'Não foi possível criar o pagamento.');
@@ -907,6 +987,7 @@ body.carrinho-aberto {
                                 <span id="badgeEstoque${id}" class="estoque-badge ${getClasseEstoque(p.estoque)}">
                                     ${getTextoEstoque(p.estoque)}
                                 </span>
+                                <div class="small text-muted mt-1">Devolução: ${Number.isSafeInteger(p.prazoDevolucaoDias)?p.prazoDevolucaoDias:prazoGeralLoja} dias</div>
                             </div>
                             ${precoAntigoHTML}
                             <strong id="precoAtual${id}" class="fs-5 text-success">
@@ -917,6 +998,7 @@ body.carrinho-aberto {
                                         onclick="editarPrecos(${id})">Preços</button>
                                 <button type="button" class="btn btn-outline-secondary btn-sm btn-editar"
                                         onclick="editarEstoque(${id})">Estoque</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm btn-editar mt-1" onclick="editarPrazoDevolucao(${id})">Devolução</button>
                             </div>
                         </div>
                     </div>
@@ -1304,7 +1386,8 @@ function abrirModalSenhaAdm() {
                         precoAntigo:Number.isSafeInteger(p.precoAntigoCentavos)?p.precoAntigoCentavos/100:null,estoque:p.estoque,
                         foto:p.foto||FOTO_PADRAO,
                         alturaFoto:Number.isInteger(p.alturaFoto)?p.alturaFoto:180,
-                        ajusteFoto:['cover','contain','fill'].includes(p.ajusteFoto)?p.ajusteFoto:'cover'
+                        ajusteFoto:['cover','contain','fill'].includes(p.ajusteFoto)?p.ajusteFoto:'cover',
+                        prazoDevolucaoDias:Number.isSafeInteger(p.prazoDevolucaoDias)?p.prazoDevolucaoDias:null
                     };
                 }
                 const novaVersao=JSON.stringify(lista);
@@ -1392,12 +1475,85 @@ function abrirModalSenhaAdm() {
             if(el) {el.textContent=texto; el.className='small text-info mb-2';}
             else console.info(texto);
         }
+        // Histórico autenticado e extrato do próprio cliente; nenhuma compra é inventada no navegador.
+        let pedidosClienteCache=[];
+        function dataBR(v){return v?new Date(v).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'Aguardando confirmação';}
+        async function buscarPedidosCliente(){
+            const u=firebase.auth().currentUser;
+            if(!u || !u.emailVerified)throw new Error('Entre com uma conta verificada para consultar seus pedidos.');
+            const token=await u.getIdToken();
+            const r=await fetch(urlCatalogo()+'/api/cliente/pedidos',{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+            const d=await r.json();if(!r.ok)throw new Error(d.error||'Não foi possível consultar as compras.');
+            pedidosClienteCache=Array.isArray(d.pedidos)?d.pedidos:[];
+            return pedidosClienteCache;
+        }
+        function fotoHistorico(id){return produtos[String(id)]?.foto||FOTO_PADRAO;}
+        async function abrirHistoricoCliente(){
+            const u=firebase.auth().currentUser;
+            if(!u)return mostrarAvisoLoja('Entre com seu e-mail primeiro.');
+            document.getElementById('emailHistorico').textContent=u.email||'';
+            document.getElementById('listaHistorico').textContent='Consultando pedidos...';
+            new bootstrap.Modal(document.getElementById('modalHistoricoCliente')).show();
+            try{
+              const pedidos=await buscarPedidosCliente();
+              const area=document.getElementById('listaHistorico');
+              if(!pedidos.length){area.textContent='Nenhum pedido encontrado nesta conta.';return;}
+              area.innerHTML=pedidos.map(p=>{
+                const pago=!!p.pago;
+                const itens=(p.itens||[]).map(i=>{
+                  const prazo=Number.isSafeInteger(i.prazoDevolucaoDias)?i.prazoDevolucaoDias:prazoGeralLoja;
+                  const limite=p.confirmadoEm?new Date(new Date(p.confirmadoEm).getTime()+prazo*86400000).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}):'Após pagamento confirmado';
+                  return `<div class="d-flex align-items-start gap-3 border-top py-3"><img src="${escaparHTML(fotoHistorico(i.id))}" alt="Foto do produto" style="width:75px;height:75px;object-fit:cover;border-radius:8px"><div><strong>${escaparHTML(i.nome)}</strong><div>${Number(i.quantidade)||1} × ${formatarMoeda((Number(i.precoCentavos)||0)/100)}</div><div class="small text-muted">Devolução: ${prazo} dias | Limite previsto: ${limite}</div></div></div>`;
+                }).join('');
+                return `<section class="border rounded p-3 mb-3"><div><strong>Pedido ${escaparHTML(p.id)}</strong> — ${pago?'Pago':'Pagamento pendente'}</div><div>Solicitado em: ${dataBR(p.criadoEm)}</div><div>Pagamento confirmado: ${dataBR(p.confirmadoEm)}</div><div>Forma: ${escaparHTML(p.formaPagamento||'Não informada')}</div><div>Total da compra: <strong>${formatarMoeda((p.valorCentavos||0)/100)}</strong></div>${itens}</section>`;
+              }).join('');
+            }catch(e){document.getElementById('listaHistorico').textContent=e.message;}
+        }
+        async function abrirExtratoCliente(){
+            const u=firebase.auth().currentUser;
+            if(!u)return mostrarAvisoLoja('Entre com seu e-mail primeiro.');
+            document.getElementById('emailExtrato').textContent=u.email||'';
+            document.getElementById('resumoExtrato').textContent='Consultando extrato...';
+            document.getElementById('listaExtrato').textContent='';
+            new bootstrap.Modal(document.getElementById('modalExtratoCliente')).show();
+            try{
+              const pedidos=await buscarPedidosCliente();
+              const pagos=pedidos.filter(p=>p.pago);
+              const total=pagos.reduce((s,p)=>s+Number(p.valorCentavos||0),0);
+              document.getElementById('resumoExtrato').textContent=`${pagos.length} compra(s) paga(s). Total histórico: ${formatarMoeda(total/100)}.`;
+              document.getElementById('listaExtrato').innerHTML=pagos.length?`<div class="table-responsive"><table class="table table-striped"><thead><tr><th>Data</th><th>Pedido</th><th>Pagamento</th><th>Valor</th></tr></thead><tbody>${pagos.map(p=>`<tr><td>${dataBR(p.confirmadoEm||p.criadoEm)}</td><td>${escaparHTML(p.id)}</td><td>${escaparHTML(p.formaPagamento||'Não informada')}</td><td>${formatarMoeda((p.valorCentavos||0)/100)}</td></tr>`).join('')}</tbody></table></div>`:'Sem compras pagas registradas nesta conta.';
+            }catch(e){document.getElementById('resumoExtrato').textContent=e.message;}
+        }
+        function baixarExtratoCSV(){
+            const pagos=pedidosClienteCache.filter(p=>p.pago);
+            if(!pagos.length)return mostrarAvisoLoja('Nenhuma compra paga para exportar.');
+            const cab=['Pedido','Data','Forma de pagamento','Valor (R$)'];
+            const linhas=pagos.map(p=>[p.id,dataBR(p.confirmadoEm||p.criadoEm),p.formaPagamento||'Não informada',(Number(p.valorCentavos||0)/100).toFixed(2).replace('.',',')]);
+            const csv='\ufeff'+[cab,...linhas].map(l=>l.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\r\n');
+            const link=document.createElement('a'),url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
+            link.href=url;link.download='extrato-compras.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+        }
+        window.editarPrazoDevolucao=async function(id){
+            if(!modoAdmAtivo)return;
+            const atual=produtos[id]?.prazoDevolucaoDias;
+            const entrada=prompt('Prazo individual em dias (0 a 365). Deixe vazio para usar o prazo geral:',Number.isSafeInteger(atual)?String(atual):'');
+            if(entrada===null)return;
+            const valor=entrada.trim()===''?null:Number(entrada);
+            if(valor!==null&&(!Number.isSafeInteger(valor)||valor<0||valor>365))return mostrarResultadoAdmin('Prazo inválido.');
+            try{await requisicaoAdmin('/api/admin/produtos/'+id,'PUT',{prazoDevolucaoDias:valor});await sincronizarProdutosOnline(true);mostrarResultadoAdmin('Prazo do produto salvo.');}
+            catch(e){mostrarResultadoAdmin('Erro: '+e.message);}
+        };
+        async function atualizarPrazoGeralLoja(){
+            try{const r=await fetch(urlCatalogo()+'/api/devolucao',{cache:'no-store'});if(r.ok){const d=await r.json();if(Number.isSafeInteger(d.dias)){prazoGeralLoja=d.dias;await sincronizarProdutosOnline(true);}}}catch(e){console.warn('Prazo geral:',e.message);}
+        }
+
         // O catálogo publicado é a única fonte para clientes.
         document.addEventListener('DOMContentLoaded',function(){
             carregarConfiguracoes();
             const area=document.getElementById('listaProdutos');
             area.innerHTML='<p class="text-center text-muted">Carregando produtos...</p>';
             sincronizarProdutosOnline();
+            atualizarPrazoGeralLoja();
             carregarLogoOnline().catch(e=>console.warn('Logotipo:',e.message));
             verificarLinkAutomatico();
             carregarFundoCabecalho();
@@ -1428,3 +1584,53 @@ function abrirModalSenhaAdm() {
                     body:JSON.stringify({order_nsu,transaction_nsu,slug})
                 });
                 const d=await r.json();
+                if(!r.ok)throw new Error(d.error||'Não foi possível confirmar o pagamento.');
+                if(d.pendente)throw new Error('O pagamento ainda não foi confirmado. Confira a transação na InfinitePay.');
+                area.className='container mt-3 alert '+(d.estoqueInsuficiente?'alert-warning':'alert-success');
+                area.textContent=d.estoqueInsuficiente?'Pagamento confirmado, mas há divergência de estoque. Entre em contato com a loja.':'Pagamento confirmado pela InfinitePay. Obrigado pela compra!';
+                await sincronizarProdutosOnline(true);
+            }catch(e){
+                area.className='container mt-3 alert alert-warning';
+                area.textContent='Não foi possível confirmar automaticamente: '+e.message+' Confira o pagamento no aplicativo InfinitePay.';
+            }finally{
+                // Evita confirmar a mesma URL em toda atualização da página.
+                const limpa=new URL(location.href);
+                ['order_nsu','transaction_nsu','slug','receipt_url','capture_method'].forEach(k=>limpa.searchParams.delete(k));
+                history.replaceState(null,'',limpa.pathname+limpa.search+limpa.hash);
+            }
+        }
+        function atualizarValoresCompra() {
+            if (produtoAtual) calcularTotal();
+        // Depois de carregar os produtos
+aplicarVisibilidadeBotaoTroca();
+}
+
+
+
+
+// ========== CONTROLE DO BOTÃO TROCAR FOTO ==========
+function alternarBotaoTrocaFoto() {
+    const ligado = document.getElementById('mostrarBotaoTrocaFoto').checked;
+    localStorage.setItem('botaoTrocaFotoAtivo', ligado ? 'sim' : 'nao');
+    aplicarVisibilidadeBotaoTroca();
+}
+
+function aplicarVisibilidadeBotaoTroca() {
+    const estado = localStorage.getItem('botaoTrocaFotoAtivo') || 'sim';
+    const ligado = estado === 'sim';
+    
+    // Marca/desmarca o interruptor
+    const interruptor = document.getElementById('mostrarBotaoTrocaFoto');
+    if (interruptor) interruptor.checked = ligado;
+    
+    // Aplica em todos os botões
+    document.querySelectorAll('.btn-trocar-foto').forEach(btn => {
+        btn.style.display = (modoAdmAtivo && ligado) ? 'block' : 'none';
+    });
+}
+// Atualização da loja
+ 
+    </script>
+    
+</body>
+</html>
