@@ -194,6 +194,11 @@ async function registrarPagamento(order_nsu,transaction_nsu,slug){
       const estoque=dados?.estoque===undefined?50:Number(dados.estoque);
       registros.push({id,ref,dados,inicial,estoque,qtd});
     }
+    tx.update(pedidoRef, {
+  pago: true,
+  formaPagamento,
+  // Mantenha aqui os demais campos existentes.
+});
     if(registros.some(x=>!Number.isSafeInteger(x.estoque)||x.estoque<x.qtd||x.dados?.excluido)){
       tx.update(pedidoRef,{pago:true,formaPagamento:obterFormaPagamento(confirmado),statusEstoque:'insuficiente',transaction_nsu,slug,confirmadoEm:admin.firestore.FieldValue.serverTimestamp()});
       return {estoqueInsuficiente:true};
